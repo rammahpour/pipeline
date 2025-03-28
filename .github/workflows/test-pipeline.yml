@@ -1,10 +1,10 @@
-name: Angular Quick Test Pipeline
+name: Angular Build and Android APK Pipeline
 
 on:
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  angular-build-and-test:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -44,32 +44,69 @@ jobs:
       - name: Run Unit Tests
         run: npm test -- --watch=false --browsers=ChromeHeadless
 
-      # Capacitor Android APK build steps
-      - name: Sync Capacitor Android
-        run: |
-          npm install @capacitor/core @capacitor/cli
-          if [ ! -d \"android\" ]; then
-          npx cap add android
-          else
-          echo \"Android platform already exists, skipping add step.\"
-          fi
-          npx cap sync android
-
-      - name: Setup Java JDK 17
-        uses: actions/setup-java@v4
+      # Setup for Android build
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: '17'
 
-      - name: Grant execute permission for Gradle wrapper
-        run: chmod +x android/gradlew
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
 
+      # Update Capacitor dependencies if needed
+      - name: Update Capacitor
+        run: npm install @capacitor/core @capacitor/cli
+
+      # Sync web assets to Android
+      - name: Sync web assets to Android
+        run: npx cap sync android
+
+      # Create a dummy google-services.json if needed
+      - name: Create dummy google-services.json
+        run: |
+          echo '{
+            "project_info": {
+              "project_number": "123456789",
+              "project_id": "dummy-project",
+              "storage_bucket": "dummy-project.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789:android:abcdef1234567890",
+                  "android_client_info": {
+                    "package_name": "com.auth0.samples"
+                  }
+                }
+              }
+            ]
+          }' > android/app/google-services.json
+
+      # Build the APK
       - name: Build Android APK
-        working-directory: android
-        run: ./gradlew assembleDebug
+        run: |
+          cd android
+          ./gradlew assembleDebug
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      # Upload APK as an artifact
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: capacitor-app-debug-apk
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      # Optional: Release to GitHub Releases
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
