@@ -32,3 +32,4 @@ npm-debug.log*
 auth.config.ts
 android/.idea/
 .angular/
+node_modules
