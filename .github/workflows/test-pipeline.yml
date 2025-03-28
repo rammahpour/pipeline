@@ -19,6 +19,15 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+        
+      - name: Create auth.config.ts file
+        run: |
+          echo 'export const domain = "test-domain.auth0.com";' > src/app/auth.config.ts
+          echo 'export const clientId = "test-client-id";' >> src/app/auth.config.ts
+          echo 'export const appId = "com.auth0.samples";' >> src/app/auth.config.ts
+          echo 'export const auth0Domain = "test-domain.auth0.com";' >> src/app/auth.config.ts
+          echo 'const iosOrAndroid = false;' >> src/app/auth.config.ts
+          echo 'export const callbackUri = iosOrAndroid ? `${appId}://${auth0Domain}/capacitor/${appId}/callback` : "http://localhost:4200";' >> src/app/auth.config.ts
 
       - name: Build Angular App
         run: npm run build -- --configuration production
