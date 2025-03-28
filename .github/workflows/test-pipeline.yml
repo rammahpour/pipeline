@@ -48,7 +48,11 @@ jobs:
       - name: Sync Capacitor Android
         run: |
           npm install @capacitor/core @capacitor/cli
+          if [ ! -d \"android\" ]; then
           npx cap add android
+          else
+          echo \"Android platform already exists, skipping add step.\"
+          fi
           npx cap sync android
 
       - name: Setup Java JDK 17
