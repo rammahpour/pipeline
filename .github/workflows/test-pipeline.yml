@@ -1,12 +1,17 @@
-name: Angular Build and Android APK Pipeline
+name: Angular Build and Capacitor (Android & iOS)
 
 on:
-  workflow_dispatch:  # Allows manual triggering
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build-and-deploy:
+  build-angular:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -20,106 +25,123 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install ESLint dependencies
-        run: |
-          npm install --save-dev @angular-eslint/builder @angular-eslint/eslint-plugin @angular-eslint/eslint-plugin-template @angular-eslint/schematics @angular-eslint/template-parser
-          npm install --save-dev @typescript-eslint/eslint-plugin @typescript-eslint/parser
-          npm install --save-dev eslint eslint-plugin-import
-
-      - name: Create auth.config.ts file
-        run: |
-          echo 'export const domain = "test-domain.auth0.com";' > src/app/auth.config.ts
-          echo 'export const clientId = "test-client-id";' >> src/app/auth.config.ts
-          echo 'export const appId = "com.auth0.samples";' >> src/app/auth.config.ts
-          echo 'export const auth0Domain = "test-domain.auth0.com";' >> src/app/auth.config.ts
-          echo 'const iosOrAndroid = false;' >> src/app/auth.config.ts
-          echo 'export const callbackUri = iosOrAndroid ? `${appId}://${auth0Domain}/capacitor/${appId}/callback` : "http://localhost:4200";' >> src/app/auth.config.ts
-
-      - name: Build Angular App
+      - name: Build Angular app
         run: npm run build -- --configuration production
 
-      - name: Lint Angular App
-        run: npm run lint || true  # Continue even if linting fails for now
-
-      - name: Run Unit Tests
-        run: npm test -- --watch=false --browsers=ChromeHeadless
-
-      # Setup for Android build
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
+      - name: Upload Web Build as Artifact
+        uses: actions/upload-artifact@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          name: web-build
+          path: www
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+  build-android:
+    needs: build-angular
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      # Update Capacitor dependencies if needed
-      - name: Update Capacitor
+      - name: Download Web Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: www
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Capacitor CLI
         run: npm install @capacitor/core @capacitor/cli
 
-      # Conditionally add Android platform and sync web assets
-      - name: Add Capacitor Android platform if needed and sync
+      - name: Sync Capacitor Android
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
-          else
-            echo "Android platform already exists, skipping add step."
           fi
           npx cap sync android
 
-      # Create a dummy google-services.json if needed
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Create dummy google-services.json
         run: |
           cat <<EOF > android/app/google-services.json
           {
-            "project_info": {
-              "project_number": "123456789",
-              "project_id": "dummy-project",
-              "storage_bucket": "dummy-project.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:123456789:android:abcdef1234567890",
-                  "android_client_info": {
-                    "package_name": "com.auth0.samples"
-                  }
-                },
-                "api_key": [
-                  {
-                    "current_key": "dummy-api-key"
-                  }
-                ]
-              }
-            ],
-            "configuration_version": "1"
+            "project_info": { "project_number": "123", "project_id": "dummy-project" },
+            "client": [{ "client_info": { "mobilesdk_app_id": "1:123:android:abcdef", "android_client_info": { "package_name": "com.example.app" } }, "api_key": [{ "current_key": "dummy-api-key" }] }]
           }
           EOF
 
-      # Build the APK
       - name: Build Android APK
         run: |
           cd android
           ./gradlew assembleDebug
 
-      # Upload APK as an artifact
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: android-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      # Optional: Release to GitHub Releases
-      - name: Create Release
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        id: create_release
-        uses: softprops/action-gh-release@v1
+  build-ios:
+    needs: build-angular
+    runs-on: macos-latest # iOS requires macOS runner
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Web Build Artifact
+        uses: actions/download-artifact@v4
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: web-build
+          path: www
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Capacitor CLI
+        run: npm install @capacitor/core @capacitor/cli
+
+      - name: Sync Capacitor iOS
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios/App
+          pod install
+
+      - name: Build iOS App (Archive)
+        run: |
+          cd ios
+          xcodebuild clean archive \
+            -workspace App/App.xcworkspace \
+            -scheme App \
+            -archivePath App.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Export IPA from Archive
+        run: |
+          cd ios
+          xcodebuild -exportArchive \
+            -archivePath App.xcarchive \
+            -exportPath ./export \
+            -exportOptionsPlist <(echo '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>method</key><string>development</string><key>signingStyle</key><string>manual</string><key>compileBitcode</key><false/></dict></plist>')
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-ipa
+          path: ios/export/App.ipa
