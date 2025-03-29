@@ -1,4 +1,4 @@
-name: Angular Build and Android APK Pipeline
+name: Angular Build, Android APK and iOS Pipeline
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest  # Changed to macos-latest to support both Android and iOS builds
 
     steps:
       - name: Checkout Repository
@@ -114,13 +114,50 @@ jobs:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
+      # iOS Build Steps
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods
+
+      - name: Add Capacitor iOS platform if needed
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          else
+            echo "iOS platform already exists, skipping add step."
+          fi
+          npx cap sync ios
+
+      - name: Install iOS dependencies
+        run: |
+          cd ios/App
+          pod install
+
+      - name: Build iOS app
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator -derivedDataPath build
+
+      - name: Upload iOS build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: ios/App/build/Build/Products/Debug-iphonesimulator/App.app
+
       # Optional: Release to GitHub Releases
       - name: Create Release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            ios/App/build/Build/Products/Debug-iphonesimulator/App.app
           tag_name: v${{ github.run_number }}
           name: Release v${{ github.run_number }}
           draft: false
