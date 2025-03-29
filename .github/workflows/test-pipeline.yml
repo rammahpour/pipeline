@@ -58,9 +58,15 @@ jobs:
       - name: Update Capacitor
         run: npm install @capacitor/core @capacitor/cli
 
-      # Sync web assets to Android
-      - name: Sync web assets to Android
-        run: npx cap sync android
+      # Conditionally add Android platform and sync web assets
+      - name: Add Capacitor Android platform if needed and sync
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          else
+            echo "Android platform already exists, skipping add step."
+          fi
+          npx cap sync android
 
       # Create a dummy google-services.json if needed
       - name: Create dummy google-services.json
@@ -109,4 +115,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
