@@ -71,7 +71,8 @@ jobs:
       # Create a dummy google-services.json if needed
       - name: Create dummy google-services.json
         run: |
-          echo '{
+          cat <<EOF > android/app/google-services.json
+          {
             "project_info": {
               "project_number": "123456789",
               "project_id": "dummy-project",
@@ -84,10 +85,17 @@ jobs:
                   "android_client_info": {
                     "package_name": "com.auth0.samples"
                   }
-                }
+                },
+                "api_key": [
+                  {
+                    "current_key": "dummy-api-key"
+                  }
+                ]
               }
-            ]
-          }' > android/app/google-services.json
+            ],
+            "configuration_version": "1"
+          }
+          EOF
 
       # Build the APK
       - name: Build Android APK
